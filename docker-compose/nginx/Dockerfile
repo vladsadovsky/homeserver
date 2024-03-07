@@ -2,7 +2,7 @@ FROM nginx:alpine
 
 #COPY nginx.conf /etc/nginx/nginx.conf
 
-COPY ./www /var/www
+COPY ./www/html /usr/share/nginx/html
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
