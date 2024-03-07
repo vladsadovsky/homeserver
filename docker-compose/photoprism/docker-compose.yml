@@ -31,6 +31,9 @@ services:
       - mariadb
     ## Server port mapping in the format "Host:Container". To use a different port, change the host port on
     ## the left-hand side and keep the container port, e.g. "80:2342" (for HTTP) or "443:2342 (for HTTPS):
+    networks:
+      - traefik
+      - backend
     ports:
       # TODO: Remove this line after debugging. Not needed to access behind Traefik
       - "2342:2342"
@@ -95,7 +98,7 @@ services:
     working_dir: "/photoprism" # do not change or remove
     ## Storage Folders: "~" is a shortcut for your home directory, "." for the current directory
     volumes:
-      - "${HUB_HOME_DIR}/media/photo:/photoprism/originals"  # Original media files (DO NOT REMOVE)
+      - "${HUB_HOME_DIR:-/home/vladsp}/media/photo:/photoprism/originals"  # Original media files (DO NOT REMOVE)
       # - "/example/family:/photoprism/originals/family"      # *Additional* media folders can be mounted like this
       # - "~/Import:/photoprism/import"                       # *Optional* base folder from which files can be imported to originals
       - "photoprism_storage:/photoprism/storage"              # *Writable* storage folder for cache, database, and sidecar files (DO NOT REMOVE)
@@ -138,6 +141,8 @@ services:
       - seccomp:unconfined
       - apparmor:unconfined
     command: --innodb-buffer-pool-size=512M --transaction-isolation=READ-COMMITTED --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=512 --innodb-rollback-on-timeout=OFF --innodb-lock-wait-timeout=120
+    networks:
+      - backend
     ## Never store database files on an unreliable device such as a USB flash drive, an SD card, or a shared network folder:
     volumes:
       - "db_data:/var/lib/mysql" # DO NOT REMOVE
@@ -151,7 +156,6 @@ services:
 
 
 networks:
-
   # The backend docker network used for traefik reverse-proxy request forwarding. All containers
   # that provide HTTP services behind the traefik reverse-proxy should be placed in
   # this network. traefik will route to the service on its exposed port, if there is exactly one, or port
@@ -162,6 +166,7 @@ networks:
   # It is not necessary for containers behind the reverse-proxy to expose their HTTP port to the host.
   traefik:
     external: true
+  backend: {}
 
 volumes:
   photoprism_storage:
@@ -170,5 +175,3 @@ volumes:
   db_data:
     external:
       name: {DB_VOLUME:-photoprism_db_data}
-
-```
