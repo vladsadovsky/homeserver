@@ -32,6 +32,7 @@ services:
     ## Server port mapping in the format "Host:Container". To use a different port, change the host port on
     ## the left-hand side and keep the container port, e.g. "80:2342" (for HTTP) or "443:2342 (for HTTPS):
     ports:
+      # TODO: Remove this line after debugging. Not needed to access behind Traefik
       - "2342:2342"
     ## Before you start the service, please check the following config options (and change them as needed):
     ## https://docs.photoprism.app/getting-started/config-options/
@@ -39,7 +40,7 @@ services:
       PHOTOPRISM_ADMIN_USER: "admin"                 # admin login username
       PHOTOPRISM_ADMIN_PASSWORD: "insecure"          # initial admin password (8-72 characters)
       PHOTOPRISM_AUTH_MODE: "password"               # authentication mode (public, password)
-      PHOTOPRISM_SITE_URL: "http://photo.sadovskyphoto.net"    # server URL in the format "http(s)://domain.name(:port)/(path)"
+      PHOTOPRISM_SITE_URL: "https://photo.sadovskyphoto.net"    # server URL in the format "http(s)://domain.name(:port)/(path)"
       PHOTOPRISM_DISABLE_TLS: "false"                # disables HTTPS/TLS even if the site URL starts with https:// and a certificate is available
       PHOTOPRISM_DEFAULT_TLS: "true"                 # defaults to a self-signed HTTPS/TLS certificate if no other certificate is available
       PHOTOPRISM_ORIGINALS_LIMIT: 5000               # file size limit for originals in MB (increase for high-res video)
@@ -94,92 +95,35 @@ services:
     working_dir: "/photoprism" # do not change or remove
     ## Storage Folders: "~" is a shortcut for your home directory, "." for the current directory
     volumes:
-      # "/host/folder:/photoprism/folder"                # Example
-      - "~/media/photo:/photoprism/originals"               # Original media files (DO NOT REMOVE)
-      # - "/example/family:/photoprism/originals/family" # *Additional* media folders can be mounted like this
-      # - "~/Import:/photoprism/import"                  # *Optional* base folder from which files can be imported to originals
-      - "./storage:/photoprism/storage"                  # *Writable* storage folder for cache, database, and sidecar files (DO NOT REMOVE)
+      - "${HUB_HOME_DIR}/media/photo:/photoprism/originals"  # Original media files (DO NOT REMOVE)
+      # - "/example/family:/photoprism/originals/family"      # *Additional* media folders can be mounted like this
+      # - "~/Import:/photoprism/import"                       # *Optional* base folder from which files can be imported to originals
+      - "photoprism_storage:/photoprism/storage"              # *Writable* storage folder for cache, database, and sidecar files (DO NOT REMOVE)
 
     hostname: ${PHOTO_HOSTNAME:-${SUBDOMAIN:-photo}}
     restart: always            # This container will be restarted when this host reboots or docker is restarted
     labels:
       - "traefik.enable=true"   # tells traefik that this container should be reverse-proxied
+      - "traefik.http.services.photoprism.loadbalancer.server.port=2342"     # Port 2342 is reverse-proxied
 
-      # Middleware that will strip off the /${SUBDOMAIN:-photo} prefix before forwarding to the photo service (used by multiple routers)
+      # Middleware that will strip off the /${SUBDOMAIN:-www} prefix before forwarding to the www service (used by multiple routers)
       - "traefik.http.middlewares.${SUBDOMAIN:-photo}-strip-prefix.stripPrefix.prefixes=/${SUBDOMAIN:-photo}"
-
-      # NOTE: If the routes below seem unnecessarily complex, it is because they are separated into multiple routers to allow detailed
-      # routing info to be included in a "X-Route-Info" header that is passed to the photo service and then returned in the
-      # photo response. This is useful for debugging and understanding traefik routing behavior. If you don't need this, it
-      # is possible to greatly simplify the routing configuration; e.g., by serving multiple entrypoints and hostnames with
-      # a single router.
 
       # -----------------------------------------
       # A router for https://${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}, on the public internet entrypoint
       - "traefik.http.routers.${SUBDOMAIN:-photo}-https-public.entrypoints=websecure"
       - "traefik.http.routers.${SUBDOMAIN:-photo}-https-public.rule=Host(`${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-https-public-headers.headers.customrequestheaders.X-Route-Info=entrypoint=websecure; router=${SUBDOMAIN:-photo}-https-public"
-      # Add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-public.middlewares=${SUBDOMAIN:-photo}-https-public-headers"
-      # -----------------------------------------
-      # A router for https://${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}, on the local lan entrypoint
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-private.entrypoints=lanwebsecure"
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-private.rule=Host(`${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-https-private-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure; router=${SUBDOMAIN:-photo}-https-private"
-      # Add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-private.middlewares=${SUBDOMAIN:-photo}-https-private-headers"
-      # -----------------------------------------
-      # A router for http://${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}, on the public internet entrypint
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-public.entrypoints=web"
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-public.rule=Host(`${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-http-public-headers.headers.customrequestheaders.X-Route-Info=entrypoint=web, router=${SUBDOMAIN:-photo}-http-public"
-      # Add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-public.middlewares=${SUBDOMAIN:-photo}-http-public-headers"
       # -----------------------------------------
       # A router for http://${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}, on the local LAN entrypoint
+      # Note: to use this entry point the client must have an entry in /etc/hosts
       - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private.entrypoints=lanweb"
       - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private.rule=Host(`${SUBDOMAIN:-photo}.${PARENT_DNS_DOMAIN}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-http-private-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanweb, router=${SUBDOMAIN:-photo}-http-private"
-      # Add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private.middlewares=${SUBDOMAIN:-photo}-http-private-headers"
       # -----------------------------------------
-      # A router for http(s)://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-photo}, on the public internet entrypoint
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-public-path.entrypoints=websecure"
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-public-path.rule=${SHARED_APP_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-photo}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-https-shared-public-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=websecure, router=${SUBDOMAIN:-photo}-https-shared-public-path"
-      # Strip the prefix and add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-public-path.middlewares=${SUBDOMAIN:-photo}-strip-prefix,${SUBDOMAIN:-photo}-https-shared-public-path-headers"
-      # -----------------------------------------
-      # A router for https://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-photo}, on the local LAN entrypointy
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-private-path.entrypoints=lanwebsecure"
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-private-path.rule=${SHARED_LAN_APP_HTTPS_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-photo}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-https-shared-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure, router=${SUBDOMAIN:-photo}-https-shared-private-path"
-      # Strip the prefix and add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-private-path.middlewares=${SUBDOMAIN:-photo}-strip-prefix,${SUBDOMAIN:-photo}-https-shared-private-path-headers"
-      # -----------------------------------------
-      # A router for http://<common-lan-local-hostname>/${SUBDOMAIN:-photo}, on the local LAN entrypoint only
+      # A router for http://<common-lan-app-hostname>/${SUBDOMAIN:-photo}, on the local LAN entrypoint only
       - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private-path.entrypoints=lanweb"
       - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private-path.rule=${SHARED_LAN_APP_HTTP_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-photo}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-http-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanweb, router=${SUBDOMAIN:-photo}-http-private-path"
-      # Strip the prefix and add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private-path.middlewares=${SUBDOMAIN:-photo}-strip-prefix,${SUBDOMAIN:-photo}-http-private-path-headers"
-
-      # -----------------------------------------
-      # A router for https://${SHARED_LAN_APP_DNS_NAME}/${SUBDOMAIN:-photo}, on the local LAN entrypoint only
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-lan-private-path.entrypoints=lanwebsecure"
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-lan-private-path.rule=${SHARED_LAN_APP_HTTPS_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-photo}`)"
-      # Following middleware will add a request header that will be displayed by photo to show route configuration
-      - "traefik.http.middlewares.${SUBDOMAIN:-photo}-https-shared-lan-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure, router=${SUBDOMAIN:-photo}-https-shared-lan-private-path"
-      # Strip the prefix and add an X-Route-Info header
-      - "traefik.http.routers.${SUBDOMAIN:-photo}-https-shared-lan-private-path.middlewares=${SUBDOMAIN:-photo}-strip-prefix,${SUBDOMAIN:-photo}-https-shared-lan-private-path-headers"
-      # -----------------------------------------
+      # Strip the prefix
+      - "traefik.http.routers.${SUBDOMAIN:-photo}-http-private-path.middlewares=${SUBDOMAIN:-photo}-strip-prefix"
 
 
   ## Database Server (recommended)
@@ -196,7 +140,7 @@ services:
     command: --innodb-buffer-pool-size=512M --transaction-isolation=READ-COMMITTED --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=512 --innodb-rollback-on-timeout=OFF --innodb-lock-wait-timeout=120
     ## Never store database files on an unreliable device such as a USB flash drive, an SD card, or a shared network folder:
     volumes:
-      - "./database:/var/lib/mysql" # DO NOT REMOVE
+      - "db_data:/var/lib/mysql" # DO NOT REMOVE
     environment:
       MARIADB_AUTO_UPGRADE: "1"
       MARIADB_INITDB_SKIP_TZINFO: "1"
@@ -218,3 +162,13 @@ networks:
   # It is not necessary for containers behind the reverse-proxy to expose their HTTP port to the host.
   traefik:
     external: true
+
+volumes:
+  photoprism_storage:
+     external:
+       name: {STORAGE_VOLUME:-photoprism_storage}
+  db_data:
+    external:
+      name: {DB_VOLUME:-photoprism_db_data}
+
+```
