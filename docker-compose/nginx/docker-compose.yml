@@ -1,0 +1,134 @@
+version: "3.3"
+
+# docker-compose.yml configuration for an INGX web server that sits behind traefik 
+#
+#  Environment Variables:
+#
+#   === Variables below are provided by Portainer when launched on tp_hub, and do not need to be added to launch environment variables ===
+#
+#
+#    PARENT_DNS_DOMAIN         The parent DNS domain name.  The fully qualified DNS name will be "${SUBDOMAIN}.${PARENT_DNS_DOMAIN}".
+#
+#    SHARED_APP_HOST_RULE
+#                            The "Host" Traefik rule expression that will match all HTTP(S) hostnames for the shared public
+#                                 apps.
+#
+#    SHARED_LAN_APP_HTTP_HOST_RULE
+#                            The "Host" Traefik rule expression that will match all HTTP hostnames for the private LAN-only
+#                                 apps.
+#
+#    SHARED_LAN_APP_HTTPS_HOST_RULE
+#                            The "Host" Traefik rule expression that will match all HTTPS hostnames for the private LAN-only
+#                                 apps.
+#
+# This stack serves:
+#    http://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}          (public internet or private LAN)  (hostname based)
+#    https://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}         (public internet or private LAN)  (hostname based)
+#    http://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-www}        (public internet or private LAN)  (path-based, handled by <common-lan-local-hostname> router; see below)
+#    https://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-www}       (public internet or private LAN)  (path-based)
+#    http://${SHARED_LAN_APP_DNS_NAME}/${SUBDOMAIN:-www}    (private LAN)                     (path-based, handled by <common-lan-local-hostname> router; see below)
+#    https://${SHARED_LAN_APP_DNS_NAME}/${SUBDOMAIN:-www}   (private LAN only)                (path-based)
+#    http://<common-lan-local-hostname>/${SUBDOMAIN:-www}   (private LAN only)                (path-based, multiple hostnames accepted; see below)
+#
+
+# Prerequisites:
+#   Prerequisites common to all stacks (only done once when traefik is initially set up):
+#     * The traefik docker-compose stack has been installed and runs on this host.
+#     * The portainer docker-compose stack has been installed and runs on this host.
+#     * This stack is launched within Portainer and can make use of Portainer's injected environment variables.
+#
+services:
+  www:
+    image: "nginx:alpine"    
+    hostname: ${WWW_HOSTNAME:-${SUBDOMAIN:-www}}
+    networks:
+      - traefik                # The network through which traefik forwards requests to our service
+    restart: always            # This container will be restarted when this host reboots or docker is restarted
+    volumes:
+      - /var/www/html:/usr/share/nginx/html:ro
+    
+    labels:
+      - "traefik.enable=true"   # tells traefik that this container should be reverse-proxied
+
+      # Middleware that will strip off the /${SUBDOMAIN:-www} prefix before forwarding to the www service (used by multiple routers)
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-strip-prefix.stripPrefix.prefixes=/${SUBDOMAIN:-www}"
+
+      # NOTE: If the routes below seem unnecessarily complex, it is because they are separated into multiple routers to allow detailed
+      # routing info to be included in a "X-Route-Info" header that is passed to the www service and then returned in the
+      # www response. This is useful for debugging and understanding traefik routing behavior. If you don't need this, it
+      # is possible to greatly simplify the routing configuration; e.g., by serving multiple entrypoints and hostnames with
+      # a single router.
+
+      # -----------------------------------------
+      # A router for https://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}, on the public internet entrypoint
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-public.entrypoints=websecure"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-public.rule=Host(`${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-https-public-headers.headers.customrequestheaders.X-Route-Info=entrypoint=websecure; router=${SUBDOMAIN:-www}-https-public"
+      # Add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-public.middlewares=${SUBDOMAIN:-www}-https-public-headers"
+      # -----------------------------------------
+      # A router for https://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}, on the local lan entrypoint
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-private.entrypoints=lanwebsecure"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-private.rule=Host(`${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-https-private-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure; router=${SUBDOMAIN:-www}-https-private"
+      # Add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-private.middlewares=${SUBDOMAIN:-www}-https-private-headers"
+
+      # -----------------------------------------
+      # A router for http://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}, on the public internet entrypint
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-public.entrypoints=web"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-public.rule=Host(`${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-http-public-headers.headers.customrequestheaders.X-Route-Info=entrypoint=web, router=${SUBDOMAIN:-www}-http-public"
+      # Add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-public.middlewares=${SUBDOMAIN:-www}-http-public-headers"
+      # -----------------------------------------
+      # A router for http://${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}, on the local LAN entrypoint
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private.entrypoints=lanweb"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private.rule=Host(`${SUBDOMAIN:-www}.${PARENT_DNS_DOMAIN}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-http-private-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanweb, router=${SUBDOMAIN:-www}-http-private"
+      # Add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private.middlewares=${SUBDOMAIN:-www}-http-private-headers"
+      # -----------------------------------------
+      # A router for http(s)://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-www}, on the public internet entrypoint
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-public-path.entrypoints=websecure"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-public-path.rule=${SHARED_APP_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-www}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-https-shared-public-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=websecure, router=${SUBDOMAIN:-www}-https-shared-public-path"
+      # Strip the prefix and add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-public-path.middlewares=${SUBDOMAIN:-www}-strip-prefix,${SUBDOMAIN:-www}-https-shared-public-path-headers"
+      # -----------------------------------------
+      # A router for https://${SHARED_APP_DNS_NAME}/${SUBDOMAIN:-www}, on the local LAN entrypointy
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-private-path.entrypoints=lanwebsecure"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-private-path.rule=${SHARED_LAN_APP_HTTPS_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-www}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-https-shared-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure, router=${SUBDOMAIN:-www}-https-shared-private-path"
+      # Strip the prefix and add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-private-path.middlewares=${SUBDOMAIN:-www}-strip-prefix,${SUBDOMAIN:-www}-https-shared-private-path-headers"
+      # -----------------------------------------
+      # A router for http://<common-lan-local-hostname>/${SUBDOMAIN:-www}, on the local LAN entrypoint only
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private-path.entrypoints=lanweb"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private-path.rule=${SHARED_LAN_APP_HTTP_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-www}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-http-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanweb, router=${SUBDOMAIN:-www}-http-private-path"
+      # Strip the prefix and add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-http-private-path.middlewares=${SUBDOMAIN:-www}-strip-prefix,${SUBDOMAIN:-www}-http-private-path-headers"
+
+      # -----------------------------------------
+      # A router for https://${SHARED_LAN_APP_DNS_NAME}/${SUBDOMAIN:-www}, on the local LAN entrypoint only
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-lan-private-path.entrypoints=lanwebsecure"
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-lan-private-path.rule=${SHARED_LAN_APP_HTTPS_HOST_RULE} && PathPrefix(`/${SUBDOMAIN:-www}`)"
+      # Following middleware will add a request header that will be displayed by www to show route configuration
+      - "traefik.http.middlewares.${SUBDOMAIN:-www}-https-shared-lan-private-path-headers.headers.customrequestheaders.X-Route-Info=entrypoint=lanwebsecure, router=${SUBDOMAIN:-www}-https-shared-lan-private-path"
+      # Strip the prefix and add an X-Route-Info header
+      - "traefik.http.routers.${SUBDOMAIN:-www}-https-shared-lan-private-path.middlewares=${SUBDOMAIN:-www}-strip-prefix,${SUBDOMAIN:-www}-https-shared-lan-private-path-headers"
+      # -----------------------------------------
+
+
+networks:
+
+  traefik:
+    external: true
