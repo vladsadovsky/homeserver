@@ -25,14 +25,13 @@ version: "3.3"
 #    http://<common-lan-local-hostname>/${SUBDOMAIN:-www}   (private LAN only)                (path-based, multiple hostnames accepted; see below)
 services:
   www:
-    image: "nginx:alpine"    
+    image: "local/www-static"
+    build: .
+    pull_policy: build
     hostname: ${WWW_HOSTNAME:-${SUBDOMAIN:-www}}
     networks:
       - traefik                # The network through which traefik forwards requests to our service
     restart: always            # This container will be restarted when this host reboots or docker is restarted
-    volumes:
-      - ./www/html:/usr/share/nginx/html:ro
-    
     labels:
       - "traefik.enable=true"   # tells traefik that this container should be reverse-proxied
 
