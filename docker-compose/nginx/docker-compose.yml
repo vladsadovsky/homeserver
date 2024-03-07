@@ -25,6 +25,7 @@ version: "3.3"
 #    http://<common-lan-local-hostname>/${SUBDOMAIN:-www}   (private LAN only)                (path-based, multiple hostnames accepted; see below)
 services:
   www:
+    #image: "nginx:alpine"
     image: "local/www-static"
     build: .
     pull_policy: build

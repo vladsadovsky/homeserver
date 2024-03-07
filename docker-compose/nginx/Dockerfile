@@ -1,10 +1,11 @@
 FROM nginx:alpine
 
-# Expost port 80
-EXPOSE 80
-
 #COPY nginx.conf /etc/nginx/nginx.conf
 
 COPY ./www /var/www
 
-CMD ["nginx"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+STOPSIGNAL SIGQUIT
+
+CMD ["nginx", "-g", "daemon off;"]
