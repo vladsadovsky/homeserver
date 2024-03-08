@@ -1,0 +1,21 @@
+# This is a docker-compose file to run  qBittorrent in a single container, not masquerading as a VPN client.
+#
+
+
+version: '3.3'
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+#    network_mode: service:protonwire
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - WEBUI_PORT=9080
+    ports:
+      - 9080:9080
+    volumes:
+      - /home/vladsp/.config/qbittorrent-config:/config
+      - /home/vladsp/.config/qbittorrent-downloads:/downloads
+    restart: unless-stopped

@@ -1,0 +1,43 @@
+# This is a docker-compose file to run ProtonWire VPN and qBittorrent in a single container.
+#
+# Background:
+# https://github.com/tprasadtp/protonvpn-docker
+
+
+version: '3.3'
+services:
+  protonwire:
+    container_name: protonwire
+    image: ghcr.io/tprasadtp/protonwire:latest
+    init: true
+    restart: unless-stopped
+    environment:
+      PROTONVPN_SERVER: "CA#34.protonvpn.net"  # CA Vancouver #34
+      DEBUG: "0"
+      KILL_SWITCH: "1"
+      WIREGUARD_PRIVATE_KEY: "+BzHKA686OsDkxdbXVwkapMOcUE3nWTFLH65ifWaEmA=" 
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.conf.all.rp_filter: 2
+      net.ipv6.conf.all.disable_ipv6: 1
+    ports:
+      - 9080:9080 # qbittorrent web UI
+      - 6881:6881 # qbittorrent
+      - 6881:6881/udp # qbittorrent
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    #network_mode: service:protonwire
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - WEBUI_PORT=9080
+    #ports:
+    #  - 9080:9080
+    volumes:
+      - /home/vladsp/.config/qbittorrent-config:/config
+      - /home/vladsp/.config/qbittorrent-downloads:/downloads
+    restart: unless-stopped
