@@ -1,9 +1,26 @@
 # This is a docker-compose file to run ProtonWire VPN and qBittorrent in a single container.
 #
 # Background:
-# https://github.com/tprasadtp/protonvpn-docker
-
-
+#
+# https://github.com/tprasadtp/protonvpn-docker - Wireguard VPN client, using ProtonVPN servers
+# https://github.com/linuxserver/docker-qbittorrent/ - qBittorrent docker image
+#
+# Environment variables:
+#  PROTONVPN_SERVER_NAME   ProtonVPN server to connect to. Example: "node-ca-08.protonvpn.net", extracted from wireguard Proton
+#                     config file, downloaded from protonvpn.com. 
+#                     Note: download from ProtonVpn web site Wireguard configuration, not OpenVPN.
+#               
+#  PROTON_WIREGUARD_PRIVATE_KEY: Wireguard private key extracted from the ProtonVPN Wireguard config file.
+#   
+# This stack serves only local LAN, thus no traefik or other reverse proxy is needed. If QB WebUI is needed to be accessed from the internet,
+# then traefik rules will be added
+# 
+# Nb: 
+#    Importing environment variables from an external file, using env_file directive will be preferred when it works
+#    env_file:
+#      - path: ${TP_HUB_ROOT}/config/qbwg.env
+#      - required: true
+#
 version: '3.3'
 services:
   protonwire:
@@ -12,31 +29,30 @@ services:
     init: true
     restart: unless-stopped
     environment:
-      PROTONVPN_SERVER: "CA#34.protonvpn.net"  # CA Vancouver #34
+      PROTONVPN_SERVER: "$PROTONVPN_SERVER_NAME"  # CA36 Vancouver
       DEBUG: "0"
       KILL_SWITCH: "1"
-      WIREGUARD_PRIVATE_KEY: "+BzHKA686OsDkxdbXVwkapMOcUE3nWTFLH65ifWaEmA=" 
-    cap_add:
+      WIREGUARD_PRIVATE_KEY: "$PROTON_WIREGUARD_PRIVATE_KEY"    
+      cap_add:
       - NET_ADMIN
     sysctls:
       net.ipv4.conf.all.rp_filter: 2
       net.ipv6.conf.all.disable_ipv6: 1
     ports:
-      - 9080:9080 # qbittorrent web UI
-      - 6881:6881 # qbittorrent
+      - 9080:9080     # qbittorrent web UI
+      - 6881:6881     # qbittorrent
       - 6881:6881/udp # qbittorrent
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
-    #network_mode: service:protonwire
+    network_mode: service:protonwire
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=America/Los_Angeles
       - WEBUI_PORT=9080
-    #ports:
-    #  - 9080:9080
+
     volumes:
       - /home/vladsp/.config/qbittorrent-config:/config
       - /home/vladsp/.config/qbittorrent-downloads:/downloads
