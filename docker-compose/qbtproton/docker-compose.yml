@@ -54,6 +54,6 @@ services:
       - WEBUI_PORT=9080
 
     volumes:
-      - /home/vladsp/.config/qbittorrent-config:/config
-      - /home/vladsp/.config/qbittorrent-downloads:/downloads
+      - ${QBT_CONFIG_VOLUME:-qbittorent-config}:/config
+      - ${QBT_CONFIG_VOLUME:-qbittorent-downloads}:/downloads
     restart: unless-stopped
